@@ -8,6 +8,8 @@ import json
 import math
 import sys
 
+TIME_UNIT = 1
+
 
 class TaskSetJsonKeys(object):
     # Task set
@@ -217,17 +219,39 @@ class Job(object):
             return self.dynamic_priority
 
     def getResourceHeld(self):
-        '''the resources that it's currently holding'''
-
-        pass
+        """the resources that it's currently holding"""
+        progressed_time = self.task.wcet - self.remainingTime
+        for section_id, section_time in self.task.sections:
+            if progressed_time == 0:
+                break
+            elif progressed_time >= section_time:
+                progressed_time -= section_time
+            else:
+                return section_id
+        return 0
 
     def getRecourseWaiting(self):
-        '''a resource that is being waited on, but not currently executing'''
-
-        pass
+        """a resource that is being waited on, but not currently executing"""
+        progressed_time = self.task.wcet - self.remainingTime
+        for section_id, section_time in self.task.sections:
+            if progressed_time == 0:
+                return section_id
+            elif progressed_time >= section_time:
+                progressed_time -= section_time
+            else:
+                break
+        return 0
 
     def getRemainingSectionTime(self):
-        pass
+        progressed_time = self.task.wcet - self.remainingTime
+        for section_id, section_time in self.task.sections:
+            if progressed_time == 0:
+                return 0
+            elif progressed_time >= section_time:
+                progressed_time -= section_time
+            else:
+                return section_time - progressed_time
+        return 0
 
     def execute(self, time):
         executionTime = min(self.remainingTime, time)
