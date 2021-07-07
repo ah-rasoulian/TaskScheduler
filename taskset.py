@@ -5,6 +5,7 @@ taskset.py - parser for task set from JSON file
 """
 
 import json
+import math
 import sys
 
 
@@ -44,11 +45,11 @@ class TaskSetIterator:
 class TaskSet(object):
     def __init__(self, data):
         self.parseDataToTasks(data)
+        self.set_original_priorities()
         self.buildJobReleases(data)
 
     def parseDataToTasks(self, data):
         taskSet = {}
-
         for taskData in data[TaskSetJsonKeys.KEY_TASKSET]:
             task = Task(taskData)
 
@@ -91,6 +92,18 @@ class TaskSet(object):
 
         self.jobs = jobs
 
+    def set_original_priorities(self):
+        id_period = {}
+        for task_id in self.tasks.keys():
+            id_period[task_id] = self.tasks.get(task_id).period
+
+        priority = 1
+        while len(id_period) > 0:
+            minimum_period_id = min(id_period, key=id_period.get)
+            self.tasks.get(minimum_period_id).set_priority(priority)
+            id_period.pop(minimum_period_id)
+            priority += 1
+
     def __contains__(self, elt):
         return elt in self.tasks
 
@@ -129,6 +142,11 @@ class Task(object):
         self.lastReleasedTime = 0.0
 
         self.jobs = []
+
+        self.priority = 0
+
+    def set_priority(self, priority):
+        self.priority = priority
 
     def getAllResources(self):
         result = []
@@ -172,11 +190,13 @@ class Task(object):
         return None
 
     def getUtilization(self):
-        @TODO
+        return self.wcet / self.period
 
     def __str__(self):
-        return "task {0}: (Φ,T,C,D,∆) = ({1}, {2}, {3}, {4}, {5})".format(self.id, self.offset, self.period, self.wcet,
-                                                                          self.relativeDeadline, self.sections)
+        return "task {0}: (Φ,T,C,D,∆,P) = ({1}, {2}, {3}, {4}, {5}, {6})".format(self.id, self.offset, self.period,
+                                                                                 self.wcet,
+                                                                                 self.relativeDeadline, self.sections,
+                                                                                 self.priority)
 
 
 class Job(object):
@@ -188,19 +208,26 @@ class Job(object):
         self.isActive = False
 
         self.remainingTime = self.task.wcet
+        self.dynamic_priority = None
+
+    def get_priority(self):
+        if self.dynamic_priority is None:
+            return self.task.priority
+        else:
+            return self.dynamic_priority
 
     def getResourceHeld(self):
         '''the resources that it's currently holding'''
 
-        @TODO
+        pass
 
     def getRecourseWaiting(self):
         '''a resource that is being waited on, but not currently executing'''
 
-        @TODO
+        pass
 
     def getRemainingSectionTime(self):
-        @TODO
+        pass
 
     def execute(self, time):
         executionTime = min(self.remainingTime, time)
@@ -218,6 +245,28 @@ class Job(object):
                                                                      self.deadline)
 
 
+def get_resources_ceiling(taskSet: TaskSet):
+    shared_resources = {}
+    for task in taskSet.tasks.values():
+        for resource in task.getAllResources():
+            if resource != 0:
+                if shared_resources.__contains__(resource):
+                    shared_resources[resource].append(task.id)
+                else:
+                    shared_resources[resource] = [task.id]
+
+    resources_ceiling = {}
+    for resource in shared_resources.keys():
+        minimum_priority = math.inf
+        for task_id in shared_resources.get(resource):
+            if taskSet.getTaskById(task_id).priority < minimum_priority:
+                minimum_priority = taskSet.getTaskById(task_id).priority
+
+        resources_ceiling[resource] = minimum_priority
+
+    return resources_ceiling
+
+
 if __name__ == "__main__":
     if len(sys.argv) > 1:
         file_path = sys.argv[1]
@@ -231,3 +280,5 @@ if __name__ == "__main__":
 
     taskSet.printTasks()
     taskSet.printJobs()
+
+    resource_ceiling = get_resources_ceiling(taskSet)
