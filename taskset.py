@@ -317,7 +317,8 @@ def fixed_priority_with_highest_locker_protocol(task_set: TaskSet, task_figure: 
     time = task_set.scheduleStartTime
     active_jobs = PriorityQueue()
     output = {}
-    deadlines_missed_status = []
+    lateness_status = []
+    deadline_missed_status = []
     while time < task_set.scheduleEndTime:
         # print("time", time)
         if releases.__contains__(time):
@@ -356,7 +357,8 @@ def fixed_priority_with_highest_locker_protocol(task_set: TaskSet, task_figure: 
             if highest_priority_job.isCompleted():
                 highest_priority_job.isActive = False
                 if time + TIME_UNIT > highest_priority_job.deadline:
-                    deadlines_missed_status.append("task {0} job {1} missed deadline; lateness={2}".format(highest_priority_job.task.id, highest_priority_job.id,
+                    deadline_missed_status.append("task {0} job {1} missed deadline".format(highest_priority_job.task.id, highest_priority_job.id))
+                    lateness_status.append("lateness task {0} job {1} ={2}".format(highest_priority_job.task.id, highest_priority_job.id,
                                                                                                            time + TIME_UNIT - highest_priority_job.deadline))
             else:
                 active_jobs.put((highest_priority_job.get_priority(), highest_priority_job))
@@ -391,11 +393,19 @@ def fixed_priority_with_highest_locker_protocol(task_set: TaskSet, task_figure: 
             print("interval [{0},{1}): task {2}, job {3}".format(key[0], key[1], value.task.id, value.id))
 
     print()
-    if len(deadlines_missed_status) == 0:
+    isFeasible = True
+
+    for job in task_set.jobs:
+        if job.isCompleted() is False:
+            deadline_missed_status.append("task {0} job {1} missed deadline".format(job.task.id, job.id))
+            isFeasible = False
+    if isFeasible:
         print("No WCET are exceeded\nThis schedule is feasible!")
     else:
         print("This schedule is not feasible!")
-        for info in deadlines_missed_status:
+        for info in deadline_missed_status:
+            print(info)
+        for info in lateness_status:
             print(info)
 
     return task_figure
@@ -427,7 +437,7 @@ if __name__ == "__main__":
     if len(sys.argv) > 1:
         file_path = sys.argv[1]
     else:
-        file_path = "taskset2.json"
+        file_path = "taskset4.json"
 
     with open(file_path) as json_data:
         data = json.load(json_data)
