@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 
 TIME_UNIT = 1
-COLORS = ["red", "blue", "orange", "brown", "yellow"]
+COLORS = ["gray", "orange", "yellow", "blue", "red", "brown"]
 
 
 class TaskSetJsonKeys(object):
