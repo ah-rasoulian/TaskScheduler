@@ -317,6 +317,7 @@ def fixed_priority_with_highest_locker_protocol(task_set: TaskSet, task_figure: 
     time = task_set.scheduleStartTime
     active_jobs = PriorityQueue()
     output = {}
+    deadlines_missed_status = []
     while time < task_set.scheduleEndTime:
         # print("time", time)
         if releases.__contains__(time):
@@ -354,6 +355,8 @@ def fixed_priority_with_highest_locker_protocol(task_set: TaskSet, task_figure: 
 
             if highest_priority_job.isCompleted():
                 highest_priority_job.isActive = False
+                if time + TIME_UNIT > highest_priority_job.deadline:
+                    deadlines_missed_status.append("task {0} job {1} missed deadline".format(highest_priority_job.task.id, highest_priority_job.id))
             else:
                 active_jobs.put((highest_priority_job.get_priority(), highest_priority_job))
                 # print("task {0} job {1} added".format(highest_priority_job.task.id, highest_priority_job.id))
@@ -386,6 +389,14 @@ def fixed_priority_with_highest_locker_protocol(task_set: TaskSet, task_figure: 
         else:
             print("interval [{0},{1}): task {2}, job {3}".format(key[0], key[1], value.task.id, value.id))
 
+    print()
+    if len(deadlines_missed_status) == 0:
+        print("No WCET are exceeded\nThis schedule is feasible!")
+    else:
+        print("This schedule is not feasible!")
+        for info in deadlines_missed_status:
+            print(info)
+
     return task_figure
 
 
@@ -415,7 +426,7 @@ if __name__ == "__main__":
     if len(sys.argv) > 1:
         file_path = sys.argv[1]
     else:
-        file_path = "taskset.json"
+        file_path = "taskset2.json"
 
     with open(file_path) as json_data:
         data = json.load(json_data)
