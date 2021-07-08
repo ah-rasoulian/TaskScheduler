@@ -356,7 +356,8 @@ def fixed_priority_with_highest_locker_protocol(task_set: TaskSet, task_figure: 
             if highest_priority_job.isCompleted():
                 highest_priority_job.isActive = False
                 if time + TIME_UNIT > highest_priority_job.deadline:
-                    deadlines_missed_status.append("task {0} job {1} missed deadline".format(highest_priority_job.task.id, highest_priority_job.id))
+                    deadlines_missed_status.append("task {0} job {1} missed deadline; lateness={2}".format(highest_priority_job.task.id, highest_priority_job.id,
+                                                                                                           time + TIME_UNIT - highest_priority_job.deadline))
             else:
                 active_jobs.put((highest_priority_job.get_priority(), highest_priority_job))
                 # print("task {0} job {1} added".format(highest_priority_job.task.id, highest_priority_job.id))
