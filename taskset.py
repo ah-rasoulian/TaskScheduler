@@ -7,8 +7,12 @@ taskset.py - parser for task set from JSON file
 import json
 import math
 import sys
+from queue import PriorityQueue
+import matplotlib.pyplot as plt
+import matplotlib.patches as patches
 
 TIME_UNIT = 1
+COLORS = ["red", "blue", "orange", "brown", "yellow"]
 
 
 class TaskSetJsonKeys(object):
@@ -46,6 +50,11 @@ class TaskSetIterator:
 
 class TaskSet(object):
     def __init__(self, data):
+        self.scheduleStartTime = float(data[TaskSetJsonKeys.KEY_SCHEDULE_START])
+        self.scheduleEndTime = float(data[TaskSetJsonKeys.KEY_SCHEDULE_END])
+        self.jobs = []
+        self.tasks = {}
+
         self.parseDataToTasks(data)
         self.set_original_priorities()
         self.buildJobReleases(data)
@@ -78,11 +87,9 @@ class TaskSet(object):
                 job = self.getTaskById(taskId).spawnJob(releaseTime)
                 jobs.append(job)
         else:
-            scheduleStartTime = float(data[TaskSetJsonKeys.KEY_SCHEDULE_START])
-            scheduleEndTime = float(data[TaskSetJsonKeys.KEY_SCHEDULE_END])
             for task in self:
-                t = max(task.offset, scheduleStartTime)
-                while t < scheduleEndTime:
+                t = max(task.offset, self.scheduleStartTime)
+                while t < self.scheduleEndTime:
                     job = task.spawnJob(t)
                     if job is not None:
                         jobs.append(job)
@@ -90,7 +97,7 @@ class TaskSet(object):
                     if task.period >= 0:
                         t += task.period  # periodic
                     else:
-                        t = scheduleEndTime  # aperiodic
+                        t = self.scheduleEndTime  # aperiodic
 
         self.jobs = jobs
 
@@ -268,10 +275,13 @@ class Job(object):
         return "[{0}:{1}] released at {2} -> deadline at {3}".format(self.task.id, self.id, self.releaseTime,
                                                                      self.deadline)
 
+    def __lt__(self, other):
+        return False
 
-def get_resources_ceiling(taskSet: TaskSet):
+
+def get_resources_ceiling(task_set: TaskSet):
     shared_resources = {}
-    for task in taskSet.tasks.values():
+    for task in task_set.tasks.values():
         for resource in task.getAllResources():
             if resource != 0:
                 if shared_resources.__contains__(resource):
@@ -283,12 +293,122 @@ def get_resources_ceiling(taskSet: TaskSet):
     for resource in shared_resources.keys():
         minimum_priority = math.inf
         for task_id in shared_resources.get(resource):
-            if taskSet.getTaskById(task_id).priority < minimum_priority:
-                minimum_priority = taskSet.getTaskById(task_id).priority
+            if task_set.getTaskById(task_id).priority < minimum_priority:
+                minimum_priority = task_set.getTaskById(task_id).priority
 
         resources_ceiling[resource] = minimum_priority
 
     return resources_ceiling
+
+
+def get_release_times(task_set: TaskSet):
+    release_times = {}
+    for job in task_set.jobs:
+        if release_times.__contains__(job.releaseTime):
+            release_times[job.releaseTime].append(job)
+        else:
+            release_times[job.releaseTime] = [job]
+    return release_times
+
+
+def fixed_priority_with_highest_locker_protocol(task_set: TaskSet, task_figure: {}):
+    ceilings = get_resources_ceiling(taskSet)
+    releases = get_release_times(taskSet)
+    time = task_set.scheduleStartTime
+    active_jobs = PriorityQueue()
+    output = {}
+    while time < task_set.scheduleEndTime:
+        # print("time", time)
+        if releases.__contains__(time):
+            for job in releases.pop(time):
+                job.isActive = True
+                active_jobs.put((job.get_priority(), job))
+                # print("task {0} job {1} added".format(job.task.id, job.id))
+
+        if active_jobs.qsize() > 0:
+            highest_priority_job = active_jobs.get()[1]
+            # print("task {0} job {1} highest gotten".format(highest_priority_job.task.id, highest_priority_job.id))
+            highest_priority_job: Job
+
+            resource_waiting = highest_priority_job.getRecourseWaiting()
+            # print("resource waiting", resource_waiting)
+            if resource_waiting != 0:
+                highest_priority_job.dynamic_priority = ceilings.get(resource_waiting)
+                # print("priority changed to", highest_priority_job.dynamic_priority)
+            elif highest_priority_job.getResourceHeld() != 0 and highest_priority_job.getRemainingSectionTime() <= TIME_UNIT:
+                highest_priority_job.dynamic_priority = highest_priority_job.task.priority
+                # print("priority back to", highest_priority_job.dynamic_priority)
+
+            if highest_priority_job.getRecourseWaiting() != 0:
+                task_figure.get(highest_priority_job.task.id).add_patch(
+                    patches.Rectangle((time, 0), TIME_UNIT, 1.5,
+                                      color=COLORS[highest_priority_job.getRecourseWaiting()]))
+                highest_priority_job.execute(TIME_UNIT)
+            else:
+                task_figure.get(highest_priority_job.task.id).add_patch(
+                    patches.Rectangle((time, 0), TIME_UNIT, 1.5, color=COLORS[highest_priority_job.getResourceHeld()]))
+                highest_priority_job.execute(TIME_UNIT)
+
+            output[time] = highest_priority_job
+            # print("output: ", output)
+
+            if highest_priority_job.isCompleted():
+                highest_priority_job.isActive = False
+            else:
+                active_jobs.put((highest_priority_job.get_priority(), highest_priority_job))
+                # print("task {0} job {1} added".format(highest_priority_job.task.id, highest_priority_job.id))
+        else:
+            output[time] = "IDLE"
+
+        time += TIME_UNIT
+        # print()
+
+    shorted_output = {}
+    last_value = None
+    interval_start = 0
+
+    for key, value in output.items():
+        if last_value is None:
+            last_value = value
+
+        if value != last_value:
+            shorted_output[(interval_start, key)] = last_value
+            interval_start = key
+            last_value = value
+
+        if value is Job:
+            pass
+
+    print()
+    for key, value in shorted_output.items():
+        if value == "IDLE":
+            print("interval [{0},{1}): IDLE".format(key[0], key[1]))
+        else:
+            print("interval [{0},{1}): task {2}, job {3}".format(key[0], key[1], value.task.id, value.id))
+
+    return task_figure
+
+
+def draw_release_and_deadlines(task_set: TaskSet, figure: {}):
+    for job in task_set.jobs:
+        ax = figure.get(job.task.id)
+        ax.arrow(x=job.releaseTime, y=0, dy=1.9, dx=0, width=0.1, head_width=0.7, head_length=0.1, color="black")
+        ax.arrow(x=job.deadline, y=2, dy=-1.9, dx=0, width=0.1, head_width=0.7, head_length=0.1, color="black")
+
+
+def get_subplots(task_set: TaskSet, figure):
+    task_subplots = {}
+    number_of_subplots = len(task_set.tasks)
+
+    for i, task in enumerate(task_set.tasks.values()):
+        ax = figure.add_subplot(number_of_subplots, 1, i + 1)
+        plt.setp(ax, xticks=range(1000), yticks=[1, 2], yticklabels="")
+        ax.tick_params(axis='x', which='major', labelsize=6)
+        ax.title.set_text("Task {0}".format(task.id))
+        ax.set_xlim([-1, task_set.scheduleEndTime + 1])
+        task_subplots[task.id] = ax
+
+    return task_subplots
 
 
 if __name__ == "__main__":
@@ -305,4 +425,9 @@ if __name__ == "__main__":
     taskSet.printTasks()
     taskSet.printJobs()
 
-    resource_ceiling = get_resources_ceiling(taskSet)
+    fig = plt.figure(figsize=(24, 12))
+
+    subplots = fixed_priority_with_highest_locker_protocol(taskSet, get_subplots(taskSet, fig))
+    draw_release_and_deadlines(taskSet, subplots)
+
+    plt.show()
